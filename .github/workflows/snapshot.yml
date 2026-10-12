@@ -1,0 +1,40 @@
+name: Refresh public world snapshots
+on:
+  schedule:
+    - cron: '3,18,33,48 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: world-cache
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Export public data within the world budget
+        id: snapshot
+        run: node publish.mjs
+        env:
+          WORLD_SOURCE: https://osato-together.pages.dev/api/internal-world-snapshot
+          WORLD_SNAPSHOT_SECRET: ${{ secrets.WORLD_SNAPSHOT_SECRET }}
+      - uses: actions/configure-pages@v5
+        if: steps.snapshot.outputs.ready == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.snapshot.outputs.ready == 'true'
+        with:
+          path: site
+          retention-days: 1
+      - uses: actions/deploy-pages@v4
+        if: steps.snapshot.outputs.ready == 'true'
+        id: deployment
