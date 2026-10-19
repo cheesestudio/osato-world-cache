@@ -18,10 +18,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
-          node-version: '22'
+          node-version: '24'
+      - name: Test snapshot publisher
+        run: node --test publish.test.mjs
       - name: Export public data within the world budget
         id: snapshot
         run: node publish.mjs

@@ -1,0 +1,60 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {fetchSnapshot, publicPages} from './publish.mjs';
+
+const letter = {id:1,body:'Public letter',createdAt:'2026-10-19T01:00:00.000Z',nickname:null};
+const snapshot = () => ({ok:true,generatedAt:'2026-10-19T01:00:00.000Z',bottles:[letter],messages:[],receipts:[]});
+const options = request => ({request,wait:async()=>{},warn:()=>{}});
+
+test('transient server errors retry and recover', async () => {
+  let calls=0;
+  const result=await fetchSnapshot('https://source.invalid','test-secret',options(async()=>++calls<3?new Response('Unavailable',{status:500}):Response.json(snapshot())));
+  assert.equal(calls,3); assert.equal(result.ready,true);
+});
+test('network failures retry without logging credentials', async () => {
+  let calls=0;
+  const result=await fetchSnapshot('https://source.invalid','test-secret',options(async()=>{if(++calls<2)throw new TypeError('network');return Response.json(snapshot());}));
+  assert.equal(calls,2); assert.equal(result.ready,true);
+});
+test('persistent server errors still fail instead of silently passing', async () => {
+  let calls=0;
+  await assert.rejects(fetchSnapshot('https://source.invalid','test-secret',options(async()=>{calls++;return new Response('private server details',{status:500});})),/HTTP 500 after 3/);
+  assert.equal(calls,3);
+});
+test('authentication failures fail immediately', async () => {
+  let calls=0;
+  await assert.rejects(fetchSnapshot('https://source.invalid','test-secret',options(async()=>{calls++;return new Response('',{status:403});})),/HTTP 403 after 1/);
+  assert.equal(calls,1);
+});
+test('daily D1 limits defer publishing without retrying', async () => {
+  let calls=0;
+  const result=await fetchSnapshot('https://source.invalid','test-secret',options(async()=>{calls++;return Response.json({code:'D1_DAILY_READ_LIMIT',retryAt:'2026-10-20T00:00:00Z'},{status:429});}));
+  assert.deepEqual(result,{ready:false,code:'D1_DAILY_READ_LIMIT',retryAt:'2026-10-20T00:00:00.000Z'}); assert.equal(calls,1);
+});
+test('application budgets remain a deferred refresh', async () => {
+  const result=await fetchSnapshot('https://source.invalid','test-secret',options(async()=>new Response('',{status:429})));
+  assert.deepEqual(result,{ready:false,code:'WORLD_DAILY_BUDGET',retryAt:null});
+});
+test('public output keeps all pages and strips private fields', () => {
+  const data=snapshot(); data.bottles=Array.from({length:65},(_,i)=>({...letter,id:i+1,email:'never publish',reply:'private',owner_id:'private-user'}));
+  const pages=publicPages(data);
+  assert.deepEqual(pages.map(p=>p.bottles.length),[32,32,1]); assert.equal(pages[0].pages,3);
+  assert.ok(!JSON.stringify(pages).includes('private')); assert.ok(!JSON.stringify(pages).includes('never publish'));
+});
+test('malformed rows cannot produce a partial replacement', () => {
+  for(const data of [{...snapshot(),bottles:[{...letter,id:'bad'}]}, {...snapshot(),receipts:[{action:'room',nonce:'bad',id:1}]}, {...snapshot(),messages:[{...letter,nickname:'name',source:'bad'}]}])
+    assert.throws(()=>publicPages(data),/schema is invalid/);
+});
+test('an empty sea retains a readable first page', () => {
+  assert.equal(publicPages({...snapshot(),bottles:[]})[0].total,0);
+});
+test('truncated response bodies retry and recover', async () => {
+  let calls=0;
+  const result=await fetchSnapshot('https://source.invalid','test-secret',options(async()=>++calls===1?
+    {status:200,ok:true,json:async()=>{throw new TypeError('interrupted stream');}}:Response.json(snapshot())));
+  assert.equal(calls,2); assert.equal(result.ready,true);
+});
+test('invalid JSON fails safely without echoing response contents', async () => {
+  await assert.rejects(fetchSnapshot('https://source.invalid','test-secret',options(async()=>new Response('{private-response-details'))),error=>
+    error.message.includes('not valid JSON') && !error.message.includes('private-response-details'));
+});
