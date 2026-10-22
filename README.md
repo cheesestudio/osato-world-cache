@@ -5,6 +5,15 @@ deployed as GitHub Pages artifacts and never committed to Git history. Artifacts
 expire after one day. No profile, email, account identifiers or private replies
 are exported.
 
+Social play snapshots also contain up to six active recruitment cards and twelve
+temporary statuses. These are included only after their author explicitly opts
+into public map display. They contain public text, nickname, expiry, capacity and
+counts; attendee identities are never exported. Private-instance invitations are
+reduced to the generic world destination. The publisher independently validates
+the schema and strips fields outside its allowlist. Old cache pages without the
+optional `play` field remain supported. Map readers must filter expiry against
+their current clock because scheduled snapshots can be delayed.
+
 The workflow refreshes about every 15 minutes; GitHub may delay scheduled jobs.
 When the website's separate world budget is exhausted, the last snapshot stays
 available and sending from the world pauses until the next UTC day. Account

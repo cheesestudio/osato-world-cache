@@ -39,6 +39,43 @@ export async function fetchSnapshot(url, secret, { request = fetch, wait = pause
   }
 }
 
+export function publicPlay(value) {
+  if (value === undefined) return { sessions: [], statuses: [] };
+  const shortText = (text, limit) => typeof text === 'string' && text.length <= limit;
+  const epoch = n => Number.isSafeInteger(n) && n >= 0;
+  const uuid = id => typeof id === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id);
+  const worldUrl = link => {
+    if (link === null) return true;
+    if (!shortText(link, 1000)) return false;
+    try {
+      const url = new URL(link);
+      if (url.origin !== 'https://vrchat.com' || url.username || url.password || url.hash) return false;
+      if (/^\/home\/world\/wrld_[a-f0-9-]{36}$/.test(url.pathname) && !url.search) return true;
+      if (url.pathname !== '/home/launch' || !/^wrld_[a-f0-9-]{36}$/.test(url.searchParams.get('worldId') || '')) return false;
+      if ([...url.searchParams.keys()].some(key => !['worldId','instanceId'].includes(key))) return false;
+      if (url.searchParams.getAll('worldId').length !== 1 || url.searchParams.getAll('instanceId').length !== 1) return false;
+      const room = url.searchParams.get('instanceId') || '';
+      // Public exports must never contain a private-instance invitation or user ID.
+      return /^\d{1,12}(?:~(?:region\((?:us|use|usw|eu|jp)\)|group\(grp_[a-f0-9-]{36}\)|groupAccessType\(public\)|ageGate))*$/.test(room) &&
+        (!room.includes('~group(') || room.includes('~groupAccessType(public)'));
+    } catch { return false; }
+  };
+  const session = s => s && uuid(s.id) && shortText(s.nickname, 128) && ['meetup','event'].includes(s.kind) &&
+    shortText(s.title, 60) && s.title.trim() && shortText(s.body, 500) && epoch(s.startsAt) && epoch(s.endsAt) &&
+    s.endsAt > s.startsAt && Number.isInteger(s.capacity) && s.capacity >= 2 && s.capacity <= 32 &&
+    Number.isInteger(s.memberCount) && s.memberCount >= 0 && s.memberCount <= s.capacity && worldUrl(s.worldUrl);
+  const status = s => s && shortText(s.nickname, 128) && ['chat','play','quiet','custom'].includes(s.mood) &&
+    shortText(s.body, 100) && epoch(s.expiresAt);
+  if (!value || !Array.isArray(value.sessions) || value.sessions.length > 6 || !value.sessions.every(session) ||
+      !Array.isArray(value.statuses) || value.statuses.length > 12 || !value.statuses.every(status))
+    throw new Error('Public play schema is invalid; the published cache was preserved.');
+  return {
+    sessions: value.sessions.map(s => ({ id:s.id,nickname:s.nickname,kind:s.kind,title:s.title,body:s.body,
+      startsAt:s.startsAt,endsAt:s.endsAt,capacity:s.capacity,memberCount:s.memberCount,worldUrl:s.worldUrl })),
+    statuses: value.statuses.map(s => ({nickname:s.nickname,mood:s.mood,body:s.body,expiresAt:s.expiresAt})),
+  };
+}
+
 export function publicPages(snapshot) {
   const validId = value => Number.isSafeInteger(value) && value > 0;
   const validDate = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -52,9 +89,10 @@ export function publicPages(snapshot) {
   const bottles = snapshot.bottles.map(b => ({id:b.id,body:b.body,createdAt:b.createdAt,nickname:b.nickname??null}));
   const messages = snapshot.messages.map(m => ({id:m.id,body:m.body,createdAt:m.createdAt,nickname:m.nickname,source:m.source}));
   const receipts = snapshot.receipts.map(r => ({action:r.action,nonce:r.nonce,id:r.id}));
+  const play = publicPlay(snapshot.play);
   const pages = Math.ceil(bottles.length / 32);
   return Array.from({length:Math.max(1,pages)}, (_, page) => ({ok:true,page,pageSize:32,total:bottles.length,pages,
-    generatedAt:snapshot.generatedAt,bottles:bottles.slice(page*32,(page+1)*32),messages,receipts,readOnlyBottles:true}));
+    generatedAt:snapshot.generatedAt,bottles:bottles.slice(page*32,(page+1)*32),messages,receipts,play,readOnlyBottles:true}));
 }
 
 export async function main() {

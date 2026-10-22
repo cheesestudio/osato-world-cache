@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchSnapshot, publicPages} from './publish.mjs';
+import {fetchSnapshot, publicPages, publicPlay} from './publish.mjs';
 
 const letter = {id:1,body:'Public letter',createdAt:'2026-10-19T01:00:00.000Z',nickname:null};
 const snapshot = () => ({ok:true,generatedAt:'2026-10-19T01:00:00.000Z',bottles:[letter],messages:[],receipts:[]});
@@ -57,4 +57,52 @@ test('truncated response bodies retry and recover', async () => {
 test('invalid JSON fails safely without echoing response contents', async () => {
   await assert.rejects(fetchSnapshot('https://source.invalid','test-secret',options(async()=>new Response('{private-response-details'))),error=>
     error.message.includes('not valid JSON') && !error.message.includes('private-response-details'));
+});
+
+const play = () => ({
+  sessions:[{id:'00000000-0000-4000-8000-000000000001',nickname:'一起玩的旅人',kind:'meetup',title:'今晚打台球',body:'欢迎新朋友',
+    startsAt:1792641600000,endsAt:1792645200000,capacity:4,memberCount:2,worldUrl:'https://vrchat.com/home/world/wrld_00000000-0000-4000-8000-000000000001'}],
+  statuses:[{nickname:'旅人',mood:'play',body:'想找人一起逛图',expiresAt:1792645200000}],
+});
+
+test('old snapshots remain readable and new play data is available on every page', () => {
+  assert.deepEqual(publicPages(snapshot())[0].play, {sessions:[],statuses:[]});
+  const data={...snapshot(),play:play(),bottles:Array.from({length:33},(_,i)=>({...letter,id:i+1}))};
+  const pages=publicPages(data);
+  assert.equal(pages.length,2);
+  assert.deepEqual(pages[0].play,play());
+  assert.deepEqual(pages[1].play,play());
+});
+
+test('play exports strip private fields from both containers and every row', () => {
+  const data=play();
+  data.sessions[0].ownerId='private-owner'; data.sessions[0].participants=['private-participant'];
+  data.statuses[0].userId='private-user'; data.statuses[0].email='private-email';
+  data.privateReplies=['private-reply'];
+  assert.deepEqual(publicPlay(data),play());
+  assert.ok(!JSON.stringify(publicPlay(data)).includes('private-'));
+});
+
+test('private instance invitations and arbitrary URL hosts cannot enter public map pages', () => {
+  const urls=[
+    'javascript:alert(1)', 'https://vrchat.com.evil.invalid/home/world/wrld_00000000-0000-4000-8000-000000000001',
+    'https://vrchat.com/home/launch?worldId=wrld_00000000-0000-4000-8000-000000000001&instanceId=1~private(usr_00000000-0000-4000-8000-000000000002)',
+    'https://vrchat.com/home/launch?worldId=wrld_00000000-0000-4000-8000-000000000001&instanceId=1~group(grp_00000000-0000-4000-8000-000000000002)~groupAccessType(members)',
+  ];
+  for(const url of urls) {
+    const data=play();data.sessions[0].worldUrl=url;
+    assert.throws(()=>publicPages({...snapshot(),play:data}),/Public play schema is invalid/);
+  }
+});
+
+test('public room URLs, expiry values and small map capacity limits are checked', () => {
+  const data=play();
+  data.sessions[0].worldUrl='https://vrchat.com/home/launch?worldId=wrld_00000000-0000-4000-8000-000000000001&instanceId=123~region(jp)';
+  assert.equal(publicPlay(data).sessions.length,1);
+  for(const invalid of [
+    {...play(),sessions:Array.from({length:7},()=>play().sessions[0])},
+    {...play(),statuses:Array.from({length:13},()=>play().statuses[0])},
+    {...play(),statuses:[{...play().statuses[0],expiresAt:'tomorrow'}]},
+    {...play(),sessions:[{...play().sessions[0],memberCount:5}]},
+  ]) assert.throws(()=>publicPlay(invalid),/Public play schema is invalid/);
 });
