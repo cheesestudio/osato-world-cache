@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchSnapshot, publicPages, publicPlay} from './publish.mjs';
+import {fetchSnapshot, publicPages, publicPlay, publicPlayMoods} from './publish.mjs';
 
 const letter = {id:1,body:'Public letter',createdAt:'2026-10-19T01:00:00.000Z',nickname:null};
 const snapshot = () => ({ok:true,generatedAt:'2026-10-19T01:00:00.000Z',bottles:[letter],messages:[],receipts:[]});
@@ -63,6 +63,17 @@ const play = () => ({
   sessions:[{id:'00000000-0000-4000-8000-000000000001',nickname:'一起玩的旅人',kind:'meetup',title:'今晚打台球',body:'欢迎新朋友',
     startsAt:1792641600000,endsAt:1792645200000,capacity:4,memberCount:2,worldUrl:'https://vrchat.com/home/world/wrld_00000000-0000-4000-8000-000000000001'}],
   statuses:[{nickname:'旅人',mood:'play',body:'想找人一起逛图',expiresAt:1792645200000}],
+});
+
+test('all twenty compatible moods are accepted and arbitrary status IDs are rejected', () => {
+  assert.equal(new Set(publicPlayMoods).size, 20);
+  assert.deepEqual(publicPlayMoods.slice(0,4), ['chat','play','quiet','custom']);
+  for (const mood of publicPlayMoods) {
+    const data = play(); data.statuses[0].mood = mood;
+    assert.equal(publicPlay(data).statuses[0].mood, mood);
+  }
+  const invalid = play(); invalid.statuses[0].mood = 'unknown';
+  assert.throws(() => publicPlay(invalid), /Public play schema is invalid/);
 });
 
 test('old snapshots remain readable and new play data is available on every page', () => {

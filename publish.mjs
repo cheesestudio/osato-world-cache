@@ -3,6 +3,11 @@ import { pathToFileURL } from 'node:url';
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const delays = [5000, 15000];
+export const publicPlayMoods = [
+  'chat','play','quiet','custom','explore','photo','music','movie',
+  'flight','racing','billiards','board','puzzle','dance','sing','study',
+  'relax','meal','bedtime','listen',
+];
 
 export async function fetchSnapshot(url, secret, { request = fetch, wait = pause, warn = console.warn } = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -64,7 +69,7 @@ export function publicPlay(value) {
     shortText(s.title, 60) && s.title.trim() && shortText(s.body, 500) && epoch(s.startsAt) && epoch(s.endsAt) &&
     s.endsAt > s.startsAt && Number.isInteger(s.capacity) && s.capacity >= 2 && s.capacity <= 32 &&
     Number.isInteger(s.memberCount) && s.memberCount >= 0 && s.memberCount <= s.capacity && worldUrl(s.worldUrl);
-  const status = s => s && shortText(s.nickname, 128) && ['chat','play','quiet','custom'].includes(s.mood) &&
+  const status = s => s && shortText(s.nickname, 128) && publicPlayMoods.includes(s.mood) &&
     shortText(s.body, 100) && epoch(s.expiresAt);
   if (!value || !Array.isArray(value.sessions) || value.sessions.length > 6 || !value.sessions.every(session) ||
       !Array.isArray(value.statuses) || value.statuses.length > 12 || !value.statuses.every(status))

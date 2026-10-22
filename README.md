@@ -14,6 +14,11 @@ the schema and strips fields outside its allowlist. Old cache pages without the
 optional `play` field remain supported. Map readers must filter expiry against
 their current clock because scheduled snapshots can be delayed.
 
+Temporary statuses accept 20 stable IDs: chat, play, quiet, custom, explore,
+photo, music, movie, flight, racing, billiards, board, puzzle, dance, sing, study,
+relax, meal, bedtime and listen. The original four IDs remain valid. This is the
+status vocabulary, not the number of exported cards (still at most twelve).
+
 The workflow refreshes about every 15 minutes; GitHub may delay scheduled jobs.
 When the website's separate world budget is exhausted, the last snapshot stays
 available and sending from the world pauses until the next UTC day. Account
